@@ -188,9 +188,36 @@ WITH camps AS (
 ),
 campLists AS (
     -- Get the list_ids and their optin statuses for the campaigns found in the previous step.
-    SELECT lists.id AS list_id, campaign_id, optin FROM lists
+    -- Also get list category and behavior flags.
+    SELECT lists.id AS list_id, campaign_id, optin, category, no_unsubscribe, no_tracking FROM lists
     INNER JOIN campaign_lists ON (campaign_lists.list_id = lists.id)
     WHERE campaign_lists.campaign_id = ANY(SELECT id FROM camps)
+),
+-- Compute per-campaign list behavior flags.
+-- If ANY list blocks unsubscribe/tracking, the whole campaign does.
+campListBehavior AS (
+    SELECT
+        campaign_id,
+        -- Allows unsubscribe only if ALL lists allow it (marketing, or service without no_unsubscribe).
+        BOOL_AND(
+            CASE
+                WHEN category = 'marketing' THEN TRUE
+                WHEN category = 'service' AND no_unsubscribe = FALSE THEN TRUE
+                ELSE FALSE
+            END
+        ) AS allows_unsubscribe,
+        -- Allows tracking only if ALL lists allow it (not transactional/legal, and no no_tracking flag).
+        BOOL_AND(
+            CASE
+                WHEN no_tracking = TRUE THEN FALSE
+                WHEN category IN ('transactional', 'legal') THEN FALSE
+                ELSE TRUE
+            END
+        ) AS allows_tracking,
+        -- Requires delivery log if ANY list requires it (transactional or legal).
+        BOOL_OR(category IN ('transactional', 'legal')) AS requires_delivery_log
+    FROM campLists
+    GROUP BY campaign_id
 ),
 campMedia AS (
     -- Get the list_ids and their optin statuses for the campaigns found in the previous step.
@@ -229,7 +256,13 @@ u AS (
     FROM (SELECT * FROM counts) co
     WHERE ca.id = co.campaign_id
 )
-SELECT camps.*, campMedia.media_id FROM camps LEFT JOIN campMedia ON (campMedia.campaign_id = camps.id);
+SELECT camps.*, campMedia.media_id,
+    COALESCE(campListBehavior.allows_unsubscribe, TRUE) AS allows_unsubscribe,
+    COALESCE(campListBehavior.allows_tracking, TRUE) AS allows_tracking,
+    COALESCE(campListBehavior.requires_delivery_log, FALSE) AS requires_delivery_log
+FROM camps
+LEFT JOIN campMedia ON (campMedia.campaign_id = camps.id)
+LEFT JOIN campListBehavior ON (campListBehavior.campaign_id = camps.id);
 
 -- name: get-campaign-analytics-unique-counts
 WITH intval AS (

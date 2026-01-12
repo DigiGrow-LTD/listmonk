@@ -2,6 +2,7 @@
 -- name: get-lists
 SELECT * FROM lists WHERE (CASE WHEN $1 = '' THEN 1=1 ELSE type=$1::list_type END)
     AND (CASE WHEN $2 = '' THEN 1=1 ELSE status=$2::list_status END)
+    AND (CASE WHEN $6 = '' THEN 1=1 ELSE category=$6::list_category END)
     AND CASE
         -- Optional list IDs based on user permission.
         WHEN $4 = TRUE THEN TRUE ELSE id = ANY($5::INT[])
@@ -25,6 +26,7 @@ WITH ls AS (
         -- Optional list IDs based on user permission.
         WHEN $8 = TRUE THEN TRUE ELSE id = ANY($9::INT[])
     END
+    AND ($12 = '' OR category = $12::list_category)
     OFFSET $10 LIMIT (CASE WHEN $11 < 1 THEN NULL ELSE $11 END)
 ),
 statuses AS (
@@ -53,7 +55,8 @@ SELECT id, uuid, type FROM lists WHERE
     END);
 
 -- name: create-list
-INSERT INTO lists (uuid, name, type, optin, status, tags, description) VALUES($1, $2, $3, $4, $5, $6, $7) RETURNING id;
+INSERT INTO lists (uuid, name, type, optin, status, tags, description, category, no_unsubscribe, no_tracking)
+VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id;
 
 -- name: update-list
 WITH l AS (
@@ -64,6 +67,9 @@ WITH l AS (
         status=(CASE WHEN $5 != '' THEN $5::list_status ELSE status END),
         tags=$6::VARCHAR(100)[],
         description=(CASE WHEN $7 != '' THEN $7 ELSE description END),
+        category=(CASE WHEN $8 != '' THEN $8::list_category ELSE category END),
+        no_unsubscribe=$9,
+        no_tracking=$10,
         updated_at=NOW()
     WHERE id = $1
     RETURNING id, name

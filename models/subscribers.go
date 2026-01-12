@@ -107,6 +107,13 @@ type Subscription struct {
 	SubscriptionStatus    null.String     `db:"subscription_status" json:"subscription_status"`
 	SubscriptionCreatedAt null.String     `db:"subscription_created_at" json:"subscription_created_at"`
 	Meta                  json.RawMessage `db:"meta" json:"meta"`
+
+	// Consent tracking fields.
+	ConsentType      null.String `db:"consent_type" json:"consent_type,omitempty"`
+	ConsentSource    null.String `db:"consent_source" json:"consent_source,omitempty"`
+	ConsentIP        null.String `db:"consent_ip" json:"consent_ip,omitempty"`
+	ConsentUserAgent null.String `db:"consent_user_agent" json:"consent_user_agent,omitempty"`
+	ConsentAdminID   null.Int    `db:"consent_admin_id" json:"consent_admin_id,omitempty"`
 }
 
 // SubscriberExport represents a subscriber record that is exported to raw data.

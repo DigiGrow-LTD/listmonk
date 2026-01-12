@@ -19,6 +19,12 @@ func (m *Manager) NewCampaignMessage(c *models.Campaign, s models.Subscriber) (C
 		from:     c.FromEmail,
 		to:       s.Email,
 		unsubURL: fmt.Sprintf(m.cfg.UnsubURL, c.UUID, s.UUID),
+
+		// Copy list behavior flags from campaign.
+		// These determine whether to add List-Unsubscribe headers, tracking pixels, etc.
+		allowUnsubscribe:    c.AllowsUnsubscribe,
+		allowTracking:       c.AllowsTracking,
+		requiresDeliveryLog: c.RequiresDeliveryLog,
 	}
 
 	if err := msg.render(); err != nil {

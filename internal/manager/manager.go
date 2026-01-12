@@ -107,6 +107,18 @@ type CampaignMessage struct {
 	altBody  []byte
 	unsubURL string
 
+	// allowUnsubscribe indicates if the message should include unsubscribe headers.
+	// This is false for transactional, legal, and service lists with no_unsubscribe=true.
+	allowUnsubscribe bool
+
+	// allowTracking indicates if the message should include tracking pixels and link tracking.
+	// This is false for transactional and legal lists, or lists with no_tracking=true.
+	allowTracking bool
+
+	// requiresDeliveryLog indicates if this message requires delivery confirmation logging.
+	// This is true for transactional and legal lists.
+	requiresDeliveryLog bool
+
 	pipe *pipe
 }
 
@@ -335,6 +347,11 @@ func (m *Manager) GetTpl(id int) (*models.Template, error) {
 func (m *Manager) TemplateFuncs(c *models.Campaign) template.FuncMap {
 	f := template.FuncMap{
 		"TrackLink": func(url string, msg *CampaignMessage) string {
+			// If tracking is disabled for this message (e.g., transactional/legal lists), return original URL.
+			if !msg.allowTracking {
+				return url
+			}
+
 			subUUID := msg.Subscriber.UUID
 			if !m.cfg.IndividualTracking {
 				subUUID = dummyUUID
@@ -343,6 +360,11 @@ func (m *Manager) TemplateFuncs(c *models.Campaign) template.FuncMap {
 			return m.trackLink(url, msg.Campaign.UUID, subUUID)
 		},
 		"TrackView": func(msg *CampaignMessage) template.HTML {
+			// If tracking is disabled for this message, return empty (no tracking pixel).
+			if !msg.allowTracking {
+				return template.HTML("")
+			}
+
 			subUUID := msg.Subscriber.UUID
 			if !m.cfg.IndividualTracking {
 				subUUID = dummyUUID
@@ -352,9 +374,17 @@ func (m *Manager) TemplateFuncs(c *models.Campaign) template.FuncMap {
 				fmt.Sprintf(m.cfg.ViewTrackURL, msg.Campaign.UUID, subUUID)))
 		},
 		"UnsubscribeURL": func(msg *CampaignMessage) string {
+			// If unsubscribe is not allowed for this message, return empty string.
+			if !msg.allowUnsubscribe {
+				return ""
+			}
 			return msg.unsubURL
 		},
 		"ManageURL": func(msg *CampaignMessage) string {
+			// If unsubscribe is not allowed, return empty string.
+			if !msg.allowUnsubscribe {
+				return ""
+			}
 			return msg.unsubURL + "?manage=true"
 		},
 		"OptinURL": func(msg *CampaignMessage) string {
@@ -370,6 +400,14 @@ func (m *Manager) TemplateFuncs(c *models.Campaign) template.FuncMap {
 		},
 		"RootURL": func() string {
 			return m.cfg.RootURL
+		},
+		// AllowsUnsubscribe returns true if the message allows unsubscription.
+		"AllowsUnsubscribe": func(msg *CampaignMessage) bool {
+			return msg.allowUnsubscribe
+		},
+		// AllowsTracking returns true if the message allows tracking.
+		"AllowsTracking": func(msg *CampaignMessage) bool {
+			return msg.allowTracking
 		},
 	}
 
@@ -477,8 +515,9 @@ func (m *Manager) worker() {
 			h.Set(models.EmailHeaderCampaignUUID, msg.Campaign.UUID)
 			h.Set(models.EmailHeaderSubscriberUUID, msg.Subscriber.UUID)
 
-			// Attach List-Unsubscribe headers?
-			if m.cfg.UnsubHeader {
+			// Attach List-Unsubscribe headers only if the message allows unsubscription.
+			// No-opt-out lists (transactional, legal, service with no_unsubscribe) don't get these headers.
+			if m.cfg.UnsubHeader && msg.allowUnsubscribe {
 				h.Set("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
 				h.Set("List-Unsubscribe", `<`+msg.unsubURL+`>`)
 			}

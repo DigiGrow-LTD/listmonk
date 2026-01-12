@@ -77,7 +77,12 @@ WITH sub AS (
 SELECT lists.*,
     subscriber_lists.status as subscription_status,
     subscriber_lists.created_at as subscription_created_at,
-    subscriber_lists.meta as subscription_meta
+    subscriber_lists.meta as subscription_meta,
+    subscriber_lists.consent_type,
+    subscriber_lists.consent_source,
+    subscriber_lists.consent_ip,
+    subscriber_lists.consent_user_agent,
+    subscriber_lists.consent_admin_id
     FROM lists LEFT JOIN subscriber_lists
     ON (subscriber_lists.list_id = lists.id AND subscriber_lists.subscriber_id = (SELECT id FROM sub))
     WHERE CASE WHEN $3 = TRUE THEN TRUE ELSE subscriber_lists.status IS NOT NULL END
@@ -95,11 +100,16 @@ listIDs AS (
               ELSE uuid=ANY($7::UUID[]) END)
 ),
 subs AS (
-    INSERT INTO subscriber_lists (subscriber_id, list_id, status)
+    INSERT INTO subscriber_lists (subscriber_id, list_id, status, consent_type, consent_source, consent_ip, consent_user_agent, consent_admin_id)
     VALUES(
         (SELECT id FROM sub),
         UNNEST(ARRAY(SELECT id FROM listIDs)),
-        (CASE WHEN $4='blocklisted' THEN 'unsubscribed'::subscription_status ELSE $8::subscription_status END)
+        (CASE WHEN $4='blocklisted' THEN 'unsubscribed'::subscription_status ELSE $8::subscription_status END),
+        (CASE WHEN $9 != '' THEN $9::consent_type ELSE NULL END),
+        $10,
+        $11,
+        $12,
+        (CASE WHEN $13 > 0 THEN $13 ELSE NULL END)
     )
     ON CONFLICT (subscriber_id, list_id) DO UPDATE
         SET updated_at=NOW(),
@@ -107,7 +117,13 @@ subs AS (
                 CASE WHEN $4='blocklisted' OR (SELECT status FROM sub)='blocklisted'
                 THEN 'unsubscribed'::subscription_status
                 ELSE $8::subscription_status END
-            )
+            ),
+            -- Update consent info if provided and not already set.
+            consent_type = COALESCE(subscriber_lists.consent_type, EXCLUDED.consent_type),
+            consent_source = COALESCE(subscriber_lists.consent_source, EXCLUDED.consent_source),
+            consent_ip = COALESCE(subscriber_lists.consent_ip, EXCLUDED.consent_ip),
+            consent_user_agent = COALESCE(subscriber_lists.consent_user_agent, EXCLUDED.consent_user_agent),
+            consent_admin_id = COALESCE(subscriber_lists.consent_admin_id, EXCLUDED.consent_admin_id)
 )
 SELECT id from sub;
 
@@ -215,9 +231,21 @@ UPDATE subscriber_lists SET status='unsubscribed', updated_at=NOW()
     WHERE subscriber_id = ANY($1::INT[]);
 
 -- name: add-subscribers-to-lists
-INSERT INTO subscriber_lists (subscriber_id, list_id, status)
-    (SELECT a, b, (CASE WHEN $3 != '' THEN $3::subscription_status ELSE 'unconfirmed' END) FROM UNNEST($1::INT[]) a, UNNEST($2::INT[]) b)
-    ON CONFLICT (subscriber_id, list_id) DO UPDATE SET status=(CASE WHEN $3 != '' THEN $3::subscription_status ELSE subscriber_lists.status END);
+INSERT INTO subscriber_lists (subscriber_id, list_id, status, consent_type, consent_source, consent_ip, consent_admin_id)
+    (SELECT a, b,
+        (CASE WHEN $3 != '' THEN $3::subscription_status ELSE 'unconfirmed' END),
+        (CASE WHEN $4 != '' THEN $4::consent_type ELSE NULL END),
+        $5,
+        $6,
+        (CASE WHEN $7 > 0 THEN $7 ELSE NULL END)
+     FROM UNNEST($1::INT[]) a, UNNEST($2::INT[]) b)
+    ON CONFLICT (subscriber_id, list_id) DO UPDATE
+        SET status=(CASE WHEN $3 != '' THEN $3::subscription_status ELSE subscriber_lists.status END),
+            -- Update consent info if provided and not already set.
+            consent_type = COALESCE(subscriber_lists.consent_type, EXCLUDED.consent_type),
+            consent_source = COALESCE(subscriber_lists.consent_source, EXCLUDED.consent_source),
+            consent_ip = COALESCE(subscriber_lists.consent_ip, EXCLUDED.consent_ip),
+            consent_admin_id = COALESCE(subscriber_lists.consent_admin_id, EXCLUDED.consent_admin_id);
 
 -- name: delete-subscriptions
 DELETE FROM subscriber_lists
@@ -246,11 +274,21 @@ UPDATE subscriber_lists SET status='unsubscribed', updated_at=NOW()
 -- name: unsubscribe-by-campaign
 -- Unsubscribes a subscriber given a campaign UUID (from all the lists in the campaign) and the subscriber UUID.
 -- If $3 is TRUE, then all subscriptions of the subscriber is blocklisted
--- and all existing subscriptions, irrespective of lists, unsubscribed.
-WITH lists AS (
-    SELECT list_id FROM campaign_lists
+-- and all existing subscriptions, irrespective of lists, unsubscribed (except no-opt-out lists).
+-- No-opt-out lists (transactional, legal, or service with no_unsubscribe=true) are skipped.
+WITH campaign_list_ids AS (
+    SELECT campaign_lists.list_id FROM campaign_lists
     LEFT JOIN campaigns ON (campaign_lists.campaign_id = campaigns.id)
     WHERE campaigns.uuid = $1
+),
+-- Filter out lists that don't allow self-unsubscription.
+unsubscribable_lists AS (
+    SELECT l.id FROM lists l
+    WHERE l.id = ANY(SELECT list_id FROM campaign_list_ids)
+    AND (
+        l.category = 'marketing'
+        OR (l.category = 'service' AND l.no_unsubscribe = FALSE)
+    )
 ),
 sub AS (
     UPDATE subscribers SET status = (CASE WHEN $3 IS TRUE THEN 'blocklisted' ELSE status END)
@@ -258,8 +296,15 @@ sub AS (
 )
 UPDATE subscriber_lists SET status = 'unsubscribed', updated_at=NOW() WHERE
     subscriber_id = (SELECT id FROM sub) AND status != 'unsubscribed' AND
-    -- If $3 is false, unsubscribe from the campaign's lists, otherwise all lists.
-    CASE WHEN $3 IS FALSE THEN list_id = ANY(SELECT list_id FROM lists) ELSE list_id != 0 END;
+    CASE
+        -- If blocklisting ($3 is true), unsubscribe from all lists except no-opt-out ones.
+        WHEN $3 IS TRUE THEN list_id IN (
+            SELECT l.id FROM lists l WHERE
+            l.category = 'marketing' OR (l.category = 'service' AND l.no_unsubscribe = FALSE)
+        )
+        -- Otherwise, unsubscribe only from the campaign's unsubscribable lists.
+        ELSE list_id = ANY(SELECT id FROM unsubscribable_lists)
+    END;
 
 -- name: delete-unconfirmed-subscriptions
 WITH optins AS (

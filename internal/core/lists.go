@@ -15,11 +15,16 @@ type listType struct {
 	Type string `json:"type"`
 }
 
-// GetLists gets all lists optionally filtered by type and status.
+// GetLists gets all lists optionally filtered by type, status, and category.
 func (c *Core) GetLists(typ, status string, getAll bool, permittedIDs []int) ([]models.List, error) {
+	return c.GetListsWithCategory(typ, status, "", getAll, permittedIDs)
+}
+
+// GetListsWithCategory gets all lists optionally filtered by type, status, and category.
+func (c *Core) GetListsWithCategory(typ, status, category string, getAll bool, permittedIDs []int) ([]models.List, error) {
 	out := []models.List{}
 
-	if err := c.q.GetLists.Select(&out, typ, status, "id", getAll, pq.Array(permittedIDs)); err != nil {
+	if err := c.q.GetLists.Select(&out, typ, status, "id", getAll, pq.Array(permittedIDs), category); err != nil {
 		c.log.Printf("error fetching lists: %v", err)
 		return nil, echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorFetching", "name", "{globals.terms.lists}", "error", pqErrMsg(err)))
@@ -43,6 +48,11 @@ func (c *Core) GetLists(typ, status string, getAll bool, permittedIDs []int) ([]
 // QueryLists gets multiple lists based on multiple query params. Along with the  paginated and sliced
 // results, the total number of lists in the DB is returned.
 func (c *Core) QueryLists(searchStr, typ, optin, status string, tags []string, orderBy, order string, getAll bool, permittedIDs []int, offset, limit int) ([]models.List, int, error) {
+	return c.QueryListsWithCategory(searchStr, typ, optin, status, "", tags, orderBy, order, getAll, permittedIDs, offset, limit)
+}
+
+// QueryListsWithCategory gets multiple lists based on multiple query params including category.
+func (c *Core) QueryListsWithCategory(searchStr, typ, optin, status, category string, tags []string, orderBy, order string, getAll bool, permittedIDs []int, offset, limit int) ([]models.List, int, error) {
 	_ = c.refreshCache(matListSubStats, false)
 
 	if tags == nil {
@@ -53,7 +63,7 @@ func (c *Core) QueryLists(searchStr, typ, optin, status string, tags []string, o
 		out            = []models.List{}
 		queryStr, stmt = makeSearchQuery(searchStr, orderBy, order, c.q.QueryLists, listQuerySortFields)
 	)
-	if err := c.db.Select(&out, stmt, 0, "", queryStr, typ, optin, status, pq.StringArray(tags), getAll, pq.Array(permittedIDs), offset, limit); err != nil {
+	if err := c.db.Select(&out, stmt, 0, "", queryStr, typ, optin, status, pq.StringArray(tags), getAll, pq.Array(permittedIDs), offset, limit, category); err != nil {
 		c.log.Printf("error fetching lists: %v", err)
 		return nil, 0, echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorFetching", "name", "{globals.terms.lists}", "error", pqErrMsg(err)))
@@ -83,7 +93,7 @@ func (c *Core) GetList(id int, uuid string) (models.List, error) {
 
 	var res []models.List
 	queryStr, stmt := makeSearchQuery("", "", "", c.q.QueryLists, nil)
-	if err := c.db.Select(&res, stmt, id, uu, queryStr, "", "", "", pq.StringArray{}, true, nil, 0, 1); err != nil {
+	if err := c.db.Select(&res, stmt, id, uu, queryStr, "", "", "", pq.StringArray{}, true, nil, 0, 1, ""); err != nil {
 		c.log.Printf("error fetching lists: %v", err)
 		return models.List{}, echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorFetching", "name", "{globals.terms.lists}", "error", pqErrMsg(err)))
@@ -163,11 +173,14 @@ func (c *Core) CreateList(l models.List) (models.List, error) {
 	if l.Status == "" {
 		l.Status = models.ListStatusActive
 	}
+	if l.Category == "" {
+		l.Category = models.ListCategoryMarketing
+	}
 
 	// Insert and read ID.
 	var newID int
 	l.UUID = uu.String()
-	if err := c.q.CreateList.Get(&newID, l.UUID, l.Name, l.Type, l.Optin, l.Status, pq.StringArray(normalizeTags(l.Tags)), l.Description); err != nil {
+	if err := c.q.CreateList.Get(&newID, l.UUID, l.Name, l.Type, l.Optin, l.Status, pq.StringArray(normalizeTags(l.Tags)), l.Description, l.Category, l.NoUnsubscribe, l.NoTracking); err != nil {
 		c.log.Printf("error creating list: %v", err)
 		return models.List{}, echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorCreating", "name", "{globals.terms.list}", "error", pqErrMsg(err)))
@@ -178,7 +191,7 @@ func (c *Core) CreateList(l models.List) (models.List, error) {
 
 // UpdateList updates a given list.
 func (c *Core) UpdateList(id int, l models.List) (models.List, error) {
-	res, err := c.q.UpdateList.Exec(id, l.Name, l.Type, l.Optin, l.Status, pq.StringArray(normalizeTags(l.Tags)), l.Description)
+	res, err := c.q.UpdateList.Exec(id, l.Name, l.Type, l.Optin, l.Status, pq.StringArray(normalizeTags(l.Tags)), l.Description, l.Category, l.NoUnsubscribe, l.NoTracking)
 	if err != nil {
 		c.log.Printf("error updating list: %v", err)
 		return models.List{}, echo.NewHTTPError(http.StatusInternalServerError,
