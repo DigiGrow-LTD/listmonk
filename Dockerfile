@@ -10,34 +10,36 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy frontend package files and install deps (cached layer)
-COPY frontend/package.json frontend/yarn.lock frontend/
-RUN cd frontend && yarn install --frozen-lockfile
-
-# Copy email-builder package files and install deps (cached layer)
-COPY frontend/email-builder/package.json frontend/email-builder/yarn.lock frontend/email-builder/
-RUN cd frontend/email-builder && yarn install --frozen-lockfile
-
-# Copy rest of source code
+# Copy source code
 COPY . .
 
-# Build the application (deps already installed, just build)
+# Build the application with all assets
 RUN make dist
 
 # Runtime stage
 FROM alpine:latest
 
+# Install runtime dependencies
 RUN apk --no-cache add ca-certificates tzdata shadow su-exec
 
+# Set the working directory
 WORKDIR /listmonk
 
+# Copy the binary from builder stage
 COPY --from=builder /app/listmonk .
 COPY config.toml.sample config.toml
+
+# Copy the entrypoint script
 COPY docker-entrypoint.sh /usr/local/bin/
 
+# Make the entrypoint script executable
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
+# Expose the application port
 EXPOSE 9000
 
+# Set the entrypoint
 ENTRYPOINT ["docker-entrypoint.sh"]
+
+# Define the command to run the application
 CMD ["./listmonk"]
