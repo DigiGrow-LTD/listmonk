@@ -68,6 +68,7 @@ type unsubTpl struct {
 	AllowWipe        bool
 	AllowPreferences bool
 	ShowManage       bool
+	HasNoOptOutLists bool // Indicates if any lists block unsubscription.
 }
 
 type optinReq struct {
@@ -240,6 +241,12 @@ func (a *App) SubscriptionPage(c echo.Context) error {
 				continue
 			}
 
+			// Check if this list blocks unsubscription.
+			if !s.List.AllowsUnsubscribe() {
+				out.HasNoOptOutLists = true
+				// Still add to subscriptions but mark as no-opt-out so UI can show it disabled.
+			}
+
 			out.Subscriptions = append(out.Subscriptions, s)
 		}
 	}
@@ -321,9 +328,14 @@ func (a *App) SubscriptionPrefs(c echo.Context) error {
 	}
 
 	// Filter the lists in the request against the subscriptions in the DB.
+	// Skip no-opt-out lists (they cannot be unsubscribed from by the subscriber).
 	unsubUUIDs := make([]string, 0, len(req.ListUUIDs))
 	for _, s := range subs {
 		if s.Type == models.ListTypePrivate {
+			continue
+		}
+		// Skip lists that don't allow self-unsubscription.
+		if !s.List.AllowsUnsubscribe() {
 			continue
 		}
 		if _, ok := reqUUIDs[s.UUID]; !ok {
@@ -332,10 +344,11 @@ func (a *App) SubscriptionPrefs(c echo.Context) error {
 	}
 
 	// Unsubscribe from lists.
-	if err := a.core.UnsubscribeLists([]int{sub.ID}, nil, unsubUUIDs); err != nil {
-		return c.Render(http.StatusInternalServerError, tplMessage,
-			makeMsgTpl(a.i18n.T("public.errorTitle"), "", a.i18n.T("public.errorProcessingRequest")))
-
+	if len(unsubUUIDs) > 0 {
+		if err := a.core.UnsubscribeLists([]int{sub.ID}, nil, unsubUUIDs); err != nil {
+			return c.Render(http.StatusInternalServerError, tplMessage,
+				makeMsgTpl(a.i18n.T("public.errorTitle"), "", a.i18n.T("public.errorProcessingRequest")))
+		}
 	}
 
 	return c.Render(http.StatusOK, tplMessage,

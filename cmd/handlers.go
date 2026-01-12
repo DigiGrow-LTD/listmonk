@@ -217,6 +217,11 @@ func initHTTPHandlers(e *echo.Echo, a *App) {
 		g.PUT("/api/roles/lists/:id", pm(hasID(a.UpdateListRole), "roles:manage"))
 		g.DELETE("/api/roles/:id", pm(hasID(a.DeleteRole), "roles:manage"))
 
+		// Delivery logs (for transactional/legal lists).
+		g.GET("/api/delivery-logs", pm(a.GetDeliveryLogs, "settings:get"))
+		g.GET("/api/delivery-logs/export", pm(a.ExportDeliveryLogs, "settings:get"))
+		g.GET("/api/delivery-logs/:id", pm(hasID(a.GetDeliveryLogByID), "settings:get"))
+
 		if a.cfg.BounceWebhooksEnabled {
 			// Private authenticated bounce endpoint.
 			g.POST("/webhooks/bounce", pm(a.BounceWebhook, "webhooks:post_bounce"))

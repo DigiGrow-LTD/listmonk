@@ -77,6 +77,13 @@ type Campaign struct {
 	// Pseudofield for getting the total number of subscribers
 	// in searches and queries.
 	Total int `db:"total" json:"-"`
+
+	// List behavior flags (set based on campaign's lists).
+	// These are computed from the campaign's lists during processing.
+	// If ANY list in the campaign doesn't allow something, the campaign doesn't.
+	AllowsUnsubscribe   bool `db:"allows_unsubscribe" json:"-"`
+	AllowsTracking      bool `db:"allows_tracking" json:"-"`
+	RequiresDeliveryLog bool `db:"requires_delivery_log" json:"-"`
 }
 
 // CampaignMeta contains fields tracking a campaign's progress.

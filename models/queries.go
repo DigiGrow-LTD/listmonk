@@ -134,6 +134,16 @@ type Queries struct {
 	DeleteRole            *sqlx.Stmt `query:"delete-role"`
 	UpsertListPermissions *sqlx.Stmt `query:"upsert-list-permissions"`
 	DeleteListPermission  *sqlx.Stmt `query:"delete-list-permission"`
+
+	// Delivery logs (for transactional/legal lists).
+	InsertDeliveryLog        *sqlx.Stmt `query:"insert-delivery-log"`
+	GetDeliveryLogs          *sqlx.Stmt `query:"get-delivery-logs"`
+	GetDeliveryLogsCount     *sqlx.Stmt `query:"get-delivery-logs-count"`
+	GetDeliveryLog           *sqlx.Stmt `query:"get-delivery-log"`
+	GetDeliveryLogsByMessageID *sqlx.Stmt `query:"get-delivery-logs-by-message-id"`
+	GetDeliveryLogsForExport *sqlx.Stmt `query:"get-delivery-logs-for-export"`
+	UpdateDeliveryLogStatus  *sqlx.Stmt `query:"update-delivery-log-status"`
+	DeleteDeliveryLogsBefore *sqlx.Stmt `query:"delete-delivery-logs-before"`
 }
 
 // compileSubscriberQueryTpl takes an arbitrary WHERE expressions

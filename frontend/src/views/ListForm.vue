@@ -44,6 +44,39 @@
           </b-select>
         </b-field>
 
+        <b-field :label="$t('lists.category')" label-position="on-border" :message="categoryHelp">
+          <b-select v-model="form.category" name="category" required expanded>
+            <option value="marketing">
+              {{ $t('lists.categories.marketing') }}
+            </option>
+            <option value="transactional">
+              {{ $t('lists.categories.transactional') }}
+            </option>
+            <option value="legal">
+              {{ $t('lists.categories.legal') }}
+            </option>
+            <option value="service">
+              {{ $t('lists.categories.service') }}
+            </option>
+          </b-select>
+        </b-field>
+
+        <div v-if="form.category === 'service'" class="mb-4">
+          <b-field :message="$t('lists.noUnsubscribeHelp')">
+            <b-switch v-model="form.no_unsubscribe" name="no_unsubscribe">
+              {{ $t('lists.noUnsubscribe') }}
+            </b-switch>
+          </b-field>
+        </div>
+
+        <div v-if="form.category === 'marketing' || form.category === 'service'" class="mb-4">
+          <b-field :message="$t('lists.noTrackingHelp')">
+            <b-switch v-model="form.no_tracking" name="no_tracking">
+              {{ $t('lists.noTracking') }}
+            </b-switch>
+          </b-field>
+        </div>
+
         <b-field :label="$t('globals.terms.tags')" label-position="on-border">
           <b-taginput v-model="form.tags" name="tags" ellipsis icon="tag-outline"
             :placeholder="$t('globals.terms.tags')" />
@@ -96,6 +129,9 @@ export default Vue.extend({
         type: 'private',
         optin: 'single',
         status: 'active',
+        category: 'marketing',
+        no_unsubscribe: false,
+        no_tracking: false,
         tags: [],
       },
     };
@@ -138,6 +174,16 @@ export default Vue.extend({
       set(v) {
         this.form.status = v ? 'archived' : 'active';
       },
+    },
+
+    categoryHelp() {
+      const helps = {
+        marketing: this.$t('lists.categoryHelp.marketing'),
+        transactional: this.$t('lists.categoryHelp.transactional'),
+        legal: this.$t('lists.categoryHelp.legal'),
+        service: this.$t('lists.categoryHelp.service'),
+      };
+      return helps[this.form.category] || '';
     },
   },
 
