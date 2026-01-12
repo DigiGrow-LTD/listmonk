@@ -47,8 +47,8 @@
               </div>
               <div style="background-color:#F5F5F5;font-size:12px;font-weight:normal;text-align:center;padding:16px 24px 16px 24px">
                 <p>
-                  <a href="{{ UnsubscribeURL }}" style="color: #888;">{{ L.T "email.unsub" }}</a>
-                  &nbsp;&nbsp;&nbsp;&nbsp;
+                  {{ if AllowsUnsubscribe . }}<a href="{{ UnsubscribeURL }}" style="color: #888;">{{ L.T "email.unsub" }}</a>
+                  &nbsp;&nbsp;&nbsp;&nbsp;{{ end }}
                   <a href="{{ MessageURL }}"style="color: #888;">{{ L.T "email.viewInBrowser" }}</a>
                   {{ TrackView }}
                 </p>

@@ -379,7 +379,8 @@ func (a *App) ManageSubscriberLists(c echo.Context) error {
 	var err error
 	switch req.Action {
 	case "add":
-		err = a.core.AddSubscriptions(subIDs, listIDs, req.Status)
+		// Admin action - no consent info, just admin ID for tracking who made the change.
+		err = a.core.AddSubscriptions(subIDs, listIDs, req.Status, "", "", "", user.ID)
 	case "remove":
 		err = a.core.DeleteSubscriptions(subIDs, listIDs)
 	case "unsubscribe":

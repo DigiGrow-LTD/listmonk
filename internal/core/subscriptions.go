@@ -23,8 +23,10 @@ func (c *Core) GetSubscriptions(subID int, subUUID string, allLists bool) ([]mod
 }
 
 // AddSubscriptions adds list subscriptions to subscribers.
-func (c *Core) AddSubscriptions(subIDs, listIDs []int, status string) error {
-	if _, err := c.q.AddSubscribersToLists.Exec(pq.Array(subIDs), pq.Array(listIDs), status); err != nil {
+// consentType, consentSource, consentIP are optional consent tracking fields.
+// adminID is the ID of the admin making the change (0 if not applicable).
+func (c *Core) AddSubscriptions(subIDs, listIDs []int, status string, consentType, consentSource, consentIP string, adminID int) error {
+	if _, err := c.q.AddSubscribersToLists.Exec(pq.Array(subIDs), pq.Array(listIDs), status, consentType, consentSource, consentIP, adminID); err != nil {
 		c.log.Printf("error adding subscriptions: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorUpdating", "name", "{globals.terms.subscribers}", "error", err.Error()))
