@@ -83,13 +83,44 @@ WHERE ($1 = 0 OR id = $1)
 ORDER BY %order% OFFSET $7 LIMIT (CASE WHEN $8 < 1 THEN NULL ELSE $8 END);
 
 -- name: get-campaign
+-- Also computes list behavior flags (allows_unsubscribe, allows_tracking, requires_delivery_log)
+-- based on the campaign's associated lists.
+WITH campListBehavior AS (
+    SELECT
+        cl.campaign_id,
+        -- Allows unsubscribe only if ALL lists allow it (marketing, or service without no_unsubscribe).
+        BOOL_AND(
+            CASE
+                WHEN l.category = 'marketing' THEN TRUE
+                WHEN l.category = 'service' AND l.no_unsubscribe = FALSE THEN TRUE
+                ELSE FALSE
+            END
+        ) AS allows_unsubscribe,
+        -- Allows tracking only if ALL lists allow it (not transactional/legal, and no no_tracking flag).
+        BOOL_AND(
+            CASE
+                WHEN l.no_tracking = TRUE THEN FALSE
+                WHEN l.category IN ('transactional', 'legal') THEN FALSE
+                ELSE TRUE
+            END
+        ) AS allows_tracking,
+        -- Requires delivery log if ANY list requires it (transactional or legal).
+        BOOL_OR(l.category IN ('transactional', 'legal')) AS requires_delivery_log
+    FROM campaign_lists cl
+    JOIN lists l ON l.id = cl.list_id
+    GROUP BY cl.campaign_id
+)
 SELECT campaigns.*,
-    COALESCE(templates.body, (SELECT body FROM templates WHERE is_default = true LIMIT 1), '') AS template_body
+    COALESCE(templates.body, (SELECT body FROM templates WHERE is_default = true LIMIT 1), '') AS template_body,
+    COALESCE(clb.allows_unsubscribe, TRUE) AS allows_unsubscribe,
+    COALESCE(clb.allows_tracking, TRUE) AS allows_tracking,
+    COALESCE(clb.requires_delivery_log, FALSE) AS requires_delivery_log
     FROM campaigns
     LEFT JOIN templates ON (
         CASE WHEN $4 = 'default' THEN templates.id = campaigns.template_id
         ELSE templates.id = campaigns.archive_template_id END
     )
+    LEFT JOIN campListBehavior clb ON clb.campaign_id = campaigns.id
     WHERE CASE
             WHEN $1 > 0 THEN campaigns.id = $1
             WHEN $3 != '' THEN campaigns.archive_slug = $3
@@ -97,13 +128,40 @@ SELECT campaigns.*,
           END;
 
 -- name: get-archived-campaigns
+-- Also computes list behavior flags for proper unsubscribe/tracking handling in archives.
+WITH campListBehavior AS (
+    SELECT
+        cl.campaign_id,
+        BOOL_AND(
+            CASE
+                WHEN l.category = 'marketing' THEN TRUE
+                WHEN l.category = 'service' AND l.no_unsubscribe = FALSE THEN TRUE
+                ELSE FALSE
+            END
+        ) AS allows_unsubscribe,
+        BOOL_AND(
+            CASE
+                WHEN l.no_tracking = TRUE THEN FALSE
+                WHEN l.category IN ('transactional', 'legal') THEN FALSE
+                ELSE TRUE
+            END
+        ) AS allows_tracking,
+        BOOL_OR(l.category IN ('transactional', 'legal')) AS requires_delivery_log
+    FROM campaign_lists cl
+    JOIN lists l ON l.id = cl.list_id
+    GROUP BY cl.campaign_id
+)
 SELECT COUNT(*) OVER () AS total, campaigns.*,
-    COALESCE(templates.body, (SELECT body FROM templates WHERE is_default = true LIMIT 1), '') AS template_body
+    COALESCE(templates.body, (SELECT body FROM templates WHERE is_default = true LIMIT 1), '') AS template_body,
+    COALESCE(clb.allows_unsubscribe, TRUE) AS allows_unsubscribe,
+    COALESCE(clb.allows_tracking, TRUE) AS allows_tracking,
+    COALESCE(clb.requires_delivery_log, FALSE) AS requires_delivery_log
     FROM campaigns
     LEFT JOIN templates ON (
         CASE WHEN $3 = 'default' THEN templates.id = campaigns.template_id
         ELSE templates.id = campaigns.archive_template_id END
     )
+    LEFT JOIN campListBehavior clb ON clb.campaign_id = campaigns.id
     WHERE campaigns.archive=true AND campaigns.type='regular' AND campaigns.status=ANY('{running, paused, finished}')
     ORDER by campaigns.created_at DESC OFFSET $1 LIMIT $2;
 
@@ -150,6 +208,29 @@ LEFT JOIN bounces AS b ON (b.campaign_id = id)
 ORDER BY ARRAY_POSITION($1, id);
 
 -- name: get-campaign-for-preview
+-- Also computes list behavior flags for proper unsubscribe/tracking handling in previews.
+WITH campListBehavior AS (
+    SELECT
+        cl.campaign_id,
+        BOOL_AND(
+            CASE
+                WHEN l.category = 'marketing' THEN TRUE
+                WHEN l.category = 'service' AND l.no_unsubscribe = FALSE THEN TRUE
+                ELSE FALSE
+            END
+        ) AS allows_unsubscribe,
+        BOOL_AND(
+            CASE
+                WHEN l.no_tracking = TRUE THEN FALSE
+                WHEN l.category IN ('transactional', 'legal') THEN FALSE
+                ELSE TRUE
+            END
+        ) AS allows_tracking,
+        BOOL_OR(l.category IN ('transactional', 'legal')) AS requires_delivery_log
+    FROM campaign_lists cl
+    JOIN lists l ON l.id = cl.list_id
+    GROUP BY cl.campaign_id
+)
 SELECT campaigns.*, COALESCE(templates.body, '') AS template_body,
 (
 	SELECT COALESCE(ARRAY_TO_JSON(ARRAY_AGG(l)), '[]') FROM (
@@ -157,9 +238,13 @@ SELECT campaigns.*, COALESCE(templates.body, '') AS template_body,
         campaign_lists.list_name AS name
         FROM campaign_lists WHERE campaign_lists.campaign_id = campaigns.id
 	) l
-) AS lists
+) AS lists,
+    COALESCE(clb.allows_unsubscribe, TRUE) AS allows_unsubscribe,
+    COALESCE(clb.allows_tracking, TRUE) AS allows_tracking,
+    COALESCE(clb.requires_delivery_log, FALSE) AS requires_delivery_log
 FROM campaigns
 LEFT JOIN templates ON (templates.id = (CASE WHEN $2=0 THEN campaigns.template_id ELSE $2 END))
+LEFT JOIN campListBehavior clb ON clb.campaign_id = campaigns.id
 WHERE campaigns.id = $1;
 
 -- name: get-campaign-status
