@@ -280,10 +280,24 @@ func (c *Core) ExportSubscribers(searchStr, query string, subIDs, listIDs []int,
 	}, nil
 }
 
+// InsertSubscriberConsent holds consent tracking info for subscriber insertion.
+type InsertSubscriberConsent struct {
+	Type      string // consent_type (explicit_optin, legitimate_interest, contractual, imported)
+	Source    string // consent_source (form name, import job, etc.)
+	IP        string // consent_ip
+	UserAgent string // consent_user_agent
+	AdminID   int    // consent_admin_id (0 if not admin action)
+}
+
 // InsertSubscriber inserts a subscriber and returns the ID. The first bool indicates if
 // it was a new subscriber, and the second bool indicates if the subscriber was sent an optin confirmation.
 // bool = optinSent?
 func (c *Core) InsertSubscriber(sub models.Subscriber, listIDs []int, listUUIDs []string, preconfirm, assertOptin bool) (models.Subscriber, bool, error) {
+	return c.InsertSubscriberWithConsent(sub, listIDs, listUUIDs, preconfirm, assertOptin, InsertSubscriberConsent{})
+}
+
+// InsertSubscriberWithConsent inserts a subscriber with consent tracking information.
+func (c *Core) InsertSubscriberWithConsent(sub models.Subscriber, listIDs []int, listUUIDs []string, preconfirm, assertOptin bool, consent InsertSubscriberConsent) (models.Subscriber, bool, error) {
 	uu, err := uuid.NewV4()
 	if err != nil {
 		c.log.Printf("error generating UUID: %v", err)
@@ -316,7 +330,12 @@ func (c *Core) InsertSubscriber(sub models.Subscriber, listIDs []int, listUUIDs 
 		sub.Attribs,
 		pq.Array(listIDs),
 		pq.Array(listUUIDs),
-		subStatus); err != nil {
+		subStatus,
+		consent.Type,
+		consent.Source,
+		consent.IP,
+		consent.UserAgent,
+		consent.AdminID); err != nil {
 		if pqErr, ok := err.(*pq.Error); ok && pqErr.Constraint == "subscribers_email_key" {
 			return models.Subscriber{}, false, echo.NewHTTPError(http.StatusConflict, c.i18n.T("subscribers.emailExists"))
 		} else {

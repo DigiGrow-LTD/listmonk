@@ -103,6 +103,11 @@ func (a *App) CreateList(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("lists.invalidName"))
 	}
 
+	// Validate category if provided.
+	if l.Category != "" && !isValidListCategory(l.Category) {
+		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("lists.invalidCategory"))
+	}
+
 	out, err := a.core.CreateList(l)
 	if err != nil {
 		return err
@@ -134,6 +139,11 @@ func (a *App) UpdateList(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("lists.invalidName"))
 	}
 
+	// Validate category if provided.
+	if l.Category != "" && !isValidListCategory(l.Category) {
+		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("lists.invalidCategory"))
+	}
+
 	// Update the list in the DB.
 	out, err := a.core.UpdateList(id, l)
 	if err != nil {
@@ -141,6 +151,16 @@ func (a *App) UpdateList(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, okResp{out})
+}
+
+// isValidListCategory checks if the given category is a valid list category.
+func isValidListCategory(cat string) bool {
+	switch cat {
+	case models.ListCategoryMarketing, models.ListCategoryTransactional,
+		models.ListCategoryLegal, models.ListCategoryService:
+		return true
+	}
+	return false
 }
 
 // DeleteList deletes a single list by ID.

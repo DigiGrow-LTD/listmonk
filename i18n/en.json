@@ -288,6 +288,7 @@
     "lists.confirmDelete": "Are you sure? This does not delete subscribers.",
     "lists.confirmSub": "Confirm subscription(s) to {name}",
     "lists.invalidName": "Invalid name",
+    "lists.invalidCategory": "Invalid list category. Must be one of: marketing, transactional, legal, service",
     "lists.newList": "New list",
     "lists.optin": "Opt-in",
     "lists.optinHelp": "Double opt-in sends an e-mail to the subscriber asking for confirmation. On Double opt-in lists, campaigns are only sent to confirmed subscribers.",
