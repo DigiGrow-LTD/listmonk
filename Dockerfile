@@ -1,13 +1,32 @@
+# Build stage
+FROM golang:1.24-alpine AS builder
+
+# Install build dependencies
+RUN apk --no-cache add make git nodejs npm yarn
+
+WORKDIR /app
+
+# Copy go mod files first for better caching
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build the application with all assets
+RUN make dist
+
+# Runtime stage
 FROM alpine:latest
 
-# Install dependencies
+# Install runtime dependencies
 RUN apk --no-cache add ca-certificates tzdata shadow su-exec
 
 # Set the working directory
 WORKDIR /listmonk
 
-# Copy only the necessary files
-COPY listmonk .
+# Copy the binary from builder stage
+COPY --from=builder /app/listmonk .
 COPY config.toml.sample config.toml
 
 # Copy the entrypoint script
